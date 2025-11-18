@@ -1,15 +1,20 @@
 // Home page with property search and listing
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { GetServerSideProps } from 'next'
 import Head from 'next/head'
-import PropertyCard from '@/components/PropertyCard'
+import { PropertyCard } from '@/components/PropertyCard'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import { Property, SearchFilters } from '@/types'
 import { propertyAPI } from '@/lib/api'
 import { FiSearch, FiFilter } from 'react-icons/fi'
 import useSWR from 'swr'
+import Link from 'next/link'
+import { useAuth } from '@/lib/AuthContext'
+import { useRouter } from 'next/router'
 
 export default function Home() {
+  const { user, loading } = useAuth()
+  const router = useRouter()
   const [filters, setFilters] = useState<SearchFilters>({
     city: '',
     minPrice: undefined,
@@ -23,6 +28,13 @@ export default function Home() {
     `/properties/search?${new URLSearchParams(filters as any).toString()}`,
     fetcher
   )
+
+  useEffect(() => {
+    // If owner is signed in, redirect them to their dashboard instead of public browse
+    if (!loading && user && user.role === 'OWNER') {
+      router.replace('/dashboard/properties')
+    }
+  }, [user, loading, router])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,6 +78,8 @@ export default function Home() {
                 </button>
               </div>
             </form>
+
+            {/* Sign in / Sign up are available from the navbar. */}
           </div>
         </div>
       </div>
@@ -124,10 +138,10 @@ export default function Home() {
         ) : properties && properties.length > 0 ? (
           <>
             <h2 className="text-2xl font-bold text-gray-800 mb-6">
-              Available Properties ({properties.length})
+              Featured Properties ({Math.min(12, properties.length)})
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {properties.map((property) => (
+              {properties.slice(0, 12).map((property) => (
                 <PropertyCard key={property.id} property={property} />
               ))}
             </div>

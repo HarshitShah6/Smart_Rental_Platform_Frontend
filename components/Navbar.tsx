@@ -17,14 +17,27 @@ export const Navbar: React.FC = () => {
     router.push('/')
   }
 
-  const navLinks = [
-    { href: '/', label: 'Browse', icon: FiHome },
-    ...(user ? [
-      { href: '/properties/create', label: 'List Property', icon: FiPlusCircle },
-      { href: '/chat', label: 'Messages', icon: FiMessageSquare },
-      { href: '/dashboard/properties', label: 'Dashboard', icon: FiUser },
-    ] : []),
-  ]
+  const navLinks = [] as { href: string; label: string; icon: any }[]
+
+    if (user) {
+    // Role-based navigation
+    if (user.role === 'TENANT') {
+      navLinks.push({ href: '/', label: 'Browse', icon: FiHome })
+      navLinks.push({ href: '/chat', label: 'Messages', icon: FiMessageSquare })
+      // Tenant-specific dashboard
+      navLinks.push({ href: '/dashboard/tenant', label: 'Dashboard', icon: FiUser })
+    } else if (user.role === 'OWNER') {
+      navLinks.push({ href: '/properties/create', label: 'List Property', icon: FiPlusCircle })
+      navLinks.push({ href: '/chat', label: 'Messages', icon: FiMessageSquare })
+      navLinks.push({ href: '/dashboard/properties', label: 'Dashboard', icon: FiUser })
+    } else {
+      // Admin or other roles: show everything
+      navLinks.push({ href: '/', label: 'Browse', icon: FiHome })
+      navLinks.push({ href: '/properties/create', label: 'List Property', icon: FiPlusCircle })
+      navLinks.push({ href: '/chat', label: 'Messages', icon: FiMessageSquare })
+      navLinks.push({ href: '/dashboard/properties', label: 'Dashboard', icon: FiUser })
+    }
+  }
 
   return (
     <nav className="bg-white shadow-md sticky top-0 z-50">
