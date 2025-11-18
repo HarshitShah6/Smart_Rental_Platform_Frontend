@@ -15,9 +15,12 @@ interface AuthContextType {
   token: string | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, name: string) => Promise<void>
-  signInWithGoogle: () => Promise<void>
+  signUp: (email: string, password: string, name: string, role?: string) => Promise<void>
+  signInWithGoogle: (role?: string) => Promise<void>
+  // optional role override stored locally until backend confirms
+  setLocalRole: (role: string | null) => void
   signOut: () => Promise<void>
+  updateProfile: (data: Partial<User>) => Promise<User | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -51,6 +54,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Store token in localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem('authToken', backendToken)
+        try {
+          // Persist user's role as the preferred role so UI keeps showing it
+          if (userData && userData.role) localStorage.setItem('preferredRole', userData.role)
+        } catch (e) {
+          // ignore
+        }
       }
     } catch (error: any) {
       console.error('Error exchanging token:', error)
@@ -89,11 +98,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe()
   }, [])
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, role?: string) => {
     try {
       setLoading(true)
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
       await exchangeToken(userCredential.user)
+      // Apply a local role override for immediate UX if provided
+      if (role) {
+        setUser((u) => (u ? { ...u, role } : u))
+      }
       toast.success('Signed in successfully!')
     } catch (error: any) {
       toast.error(error.message || 'Sign in failed')
@@ -103,11 +116,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const signUp = async (email: string, password: string, name: string) => {
+  const signUp = async (email: string, password: string, name: string, role?: string) => {
     try {
       setLoading(true)
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       await exchangeToken(userCredential.user)
+      // Best-effort: persist selected role to backend if available
+      try {
+        const backendToken = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+        if (backendToken && role) {
+          await apiClient.post('/auth/set-role', { role }, { headers: { Authorization: `Bearer ${backendToken}` } })
+        }
+      } catch (err) {
+        // ignore errors setting role on backend
+        console.warn('Failed to persist role to backend (optional):', err)
+      }
+      // Apply local role immediately so UI reflects choice (until backend confirms)
+      if (role) {
+        setUser((u) => (u ? { ...u, role } : u))
+      }
       toast.success('Account created successfully!')
     } catch (error: any) {
       toast.error(error.message || 'Sign up failed')
@@ -117,12 +144,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (role?: string) => {
     try {
       setLoading(true)
       const provider = new GoogleAuthProvider()
       const userCredential = await signInWithPopup(auth, provider)
       await exchangeToken(userCredential.user)
+      if (role) {
+        setUser((u) => (u ? { ...u, role } : u))
+      }
       toast.success('Signed in with Google!')
     } catch (error: any) {
       toast.error(error.message || 'Google sign in failed')
@@ -148,6 +178,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const updateProfile = async (data: Partial<User>) => {
+    // Best-effort: persist to backend if endpoint exists and update local state
+    try {
+      // try common endpoints - backend may expose either /users/me or /users/:id
+      let res = null
+      try {
+        res = await apiClient.put('/users/me', data)
+      } catch (e) {
+        // try fallback
+        if (user?.id) {
+          try {
+            res = await apiClient.put(`/users/${user.id}`, data)
+          } catch (e2) {
+            // ignore
+          }
+        }
+      }
+
+      // If backend returned updated user, use it; otherwise merge locally
+      if (res && res.data && (res.data.user || res.data)) {
+        const updatedUser = res.data.user || res.data
+        setUser(updatedUser)
+        return updatedUser
+      }
+
+      // Fallback: merge into local user state
+      setUser((u) => (u ? { ...u, ...data } as User : u))
+      return null
+    } catch (err) {
+      console.warn('Failed to update profile (best-effort):', err)
+      throw err
+    }
+  }
+
+  const setLocalRole = (role: string | null) => {
+    setUser((u) => {
+      if (!u) return u
+      try {
+        if (typeof window !== 'undefined') {
+          if (role === 'OWNER' || role === 'TENANT') localStorage.setItem('preferredRole', role)
+        }
+      } catch (e) {}
+      return { ...u, role: role ?? u.role }
+    })
+  }
+
   const value = {
     user,
     firebaseUser,
@@ -156,7 +232,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signIn,
     signUp,
     signInWithGoogle,
+    setLocalRole,
     signOut,
+    updateProfile,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
