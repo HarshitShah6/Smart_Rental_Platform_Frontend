@@ -1,7 +1,7 @@
 // Sign Up Page
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import Head from 'next/head'
@@ -12,11 +12,19 @@ import { FcGoogle } from 'react-icons/fc'
 
 export default function SignUpPage() {
   const router = useRouter()
-  const { signUp, signInWithGoogle, loading } = useAuth()
+  const { signUp, signInWithGoogle, loading, setLocalRole } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [role, setRole] = useState<'TENANT' | 'OWNER'>('TENANT')
+
+  useEffect(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('preferredRole') : null
+      if (stored === 'OWNER' || stored === 'TENANT') setRole(stored as 'TENANT' | 'OWNER')
+    } catch (e) {}
+  }, [])
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
 
@@ -35,8 +43,11 @@ export default function SignUpPage() {
     }
 
     try {
-      await signUp(email, password, name)
-      router.push('/')
+      await signUp(email, password, name, role)
+      try { setLocalRole(role) } catch (e) {}
+      // Redirect based on selected role. Backend may override; this is UX-friendly.
+      if (role === 'OWNER') router.push('/dashboard/properties')
+      else router.push('/')
     } catch (err: any) {
       setError(err.message || 'Failed to create account')
     }
@@ -44,7 +55,8 @@ export default function SignUpPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle()
+      await signInWithGoogle(role)
+      try { setLocalRole(role) } catch (e) {}
       router.push('/')
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google')
@@ -92,6 +104,40 @@ export default function SignUpPage() {
                     className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="John Doe"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sign up as</label>
+                <div className="flex items-center space-x-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="role"
+                      value="TENANT"
+                      checked={role === 'TENANT'}
+                      onChange={() => {
+                        setRole('TENANT')
+                        try { localStorage.setItem('preferredRole', 'TENANT') } catch (e) {}
+                      }}
+                      className="form-radio"
+                    />
+                    <span className="ml-2 text-sm">Tenant</span>
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="role"
+                      value="OWNER"
+                      checked={role === 'OWNER'}
+                      onChange={() => {
+                        setRole('OWNER')
+                        try { localStorage.setItem('preferredRole', 'OWNER') } catch (e) {}
+                      }}
+                      className="form-radio"
+                    />
+                    <span className="ml-2 text-sm">Owner</span>
+                  </label>
                 </div>
               </div>
 

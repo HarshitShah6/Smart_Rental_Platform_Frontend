@@ -1,7 +1,7 @@
 // Login Page
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import Head from 'next/head'
@@ -12,9 +12,27 @@ import { FcGoogle } from 'react-icons/fc'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { signIn, signInWithGoogle, loading } = useAuth()
+  const { signIn, signInWithGoogle, loading, setLocalRole } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState<'TENANT' | 'OWNER'>('TENANT')
+
+  // Initialize role from signed-in user or persisted preference
+  useEffect(() => {
+    try {
+      if ((window as any)._authUser && (window as any)._authUser.role) {
+        // page scripts or tests may expose a global - prefer actual user role
+        setRole((window as any)._authUser.role === 'OWNER' ? 'OWNER' : 'TENANT')
+        return
+      }
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('preferredRole') : null
+      if (stored === 'OWNER' || stored === 'TENANT') {
+        setRole(stored as 'TENANT' | 'OWNER')
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [])
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
 
@@ -23,8 +41,12 @@ export default function LoginPage() {
     setError('')
 
     try {
-      await signIn(email, password)
-      router.push('/')
+      await signIn(email, password, role)
+      // Apply a local role override so UI updates immediately
+      try { setLocalRole(role) } catch (e) {}
+      // UX redirect according to selected role
+      if (role === 'OWNER') router.push('/dashboard/properties')
+      else router.push('/')
     } catch (err: any) {
       setError(err.message || 'Failed to sign in')
     }
@@ -32,8 +54,10 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle()
-      router.push('/')
+      await signInWithGoogle(role)
+      try { setLocalRole(role) } catch (e) {}
+      if (role === 'OWNER') router.push('/dashboard/properties')
+      else router.push('/')
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google')
     }
@@ -80,6 +104,40 @@ export default function LoginPage() {
                     className="pl-10 w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="you@example.com"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sign in as</label>
+                <div className="flex items-center space-x-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="role"
+                      value="TENANT"
+                      checked={role === 'TENANT'}
+                      onChange={() => {
+                        setRole('TENANT')
+                        try { localStorage.setItem('preferredRole', 'TENANT') } catch (e) {}
+                      }}
+                      className="form-radio"
+                    />
+                    <span className="ml-2 text-sm">Tenant</span>
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="role"
+                      value="OWNER"
+                      checked={role === 'OWNER'}
+                      onChange={() => {
+                        setRole('OWNER')
+                        try { localStorage.setItem('preferredRole', 'OWNER') } catch (e) {}
+                      }}
+                      className="form-radio"
+                    />
+                    <span className="ml-2 text-sm">Owner</span>
+                  </label>
                 </div>
               </div>
 
