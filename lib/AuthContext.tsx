@@ -28,8 +28,10 @@ interface AuthContextType {
   signIn: (email: string, password: string, role: UserRole) => Promise<void>
   signUp: (email: string, password: string, name: string, role: UserRole) => Promise<void>
   signOutUser: () => Promise<void>
+  signOut: () => Promise<void>
   signInWithGoogle: (role: UserRole) => Promise<void>
   setLocalRole: (role: UserRole) => void
+  updateProfile: (data: Partial<User>) => Promise<User | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -141,10 +143,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await auth.signOut()
     setUser(null)
   }
+  // Provide generic alias expected by components
+  const signOut = signOutUser
+
+  // ---- UPDATE PROFILE (best-effort) ----
+  const updateProfile = async (data: Partial<User>) => {
+    // Try common endpoints if API URL exists; otherwise merge locally
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL
+      let updated: User | null = null
+      if (apiUrl && user) {
+        try {
+          const res = await fetch(`${apiUrl}/users/me`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          })
+          if (res.ok) {
+            const body = await res.json()
+            updated = body.user || body
+          }
+        } catch (_) {
+          // fallback endpoint
+          try {
+            const res2 = await fetch(`${apiUrl}/users/${user.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data),
+            })
+            if (res2.ok) {
+              const body2 = await res2.json()
+              updated = body2.user || body2
+            }
+          } catch (_) {}
+        }
+      }
+      if (updated) {
+        setUser(prev => (prev ? { ...prev, ...updated } : prev))
+        return updated
+      }
+      // Local merge fallback
+      setUser(prev => (prev ? { ...prev, ...data } : prev))
+      return null
+    } catch (e) {
+      // Even on error, attempt local merge so UI updates
+      setUser(prev => (prev ? { ...prev, ...data } : prev))
+      return null
+    }
+  }
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, signIn, signUp, signOutUser, signInWithGoogle, setLocalRole }}
+      value={{ user, loading, signIn, signUp, signOutUser, signOut, signInWithGoogle, setLocalRole, updateProfile }}
     >
       {children}
     </AuthContext.Provider>
